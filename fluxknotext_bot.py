@@ -40,7 +40,7 @@ FLOW_PATH = os.path.join(os.path.dirname(__file__), "fluxknotext_base.json")
 TIMEOUT = 300
 
 # Conversation states
-TEXT, IMAGE = range(2)
+IMAGE, TEXT = range(2)
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -114,21 +114,25 @@ async def run_flow(prompt_text: str, img_path: str) -> tuple[list[str], str | No
     return [], "Timeout waiting for ComfyUI output"
 
 
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Launch ComfyUI."""
+    if update.effective_user.id != AUTHORIZED_USER_ID:
+        return
+    ensure_comfy()
+    await update.message.reply_text("ComfyUI started.")
+
+
+async def run_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Begin a run by asking for an image."""
     if update.effective_user.id != AUTHORIZED_USER_ID:
         return ConversationHandler.END
     ensure_comfy()
-    await update.message.reply_text("Send your prompt text:")
-    return TEXT
-
-
-async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["prompt"] = update.message.text.strip()
-    await update.message.reply_text("Now send an image to edit:")
+    await update.message.reply_text("Send the image to edit:")
     return IMAGE
 
 
 async def image_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Save the received image and ask for a prompt."""
     if update.effective_user.id != AUTHORIZED_USER_ID:
         return ConversationHandler.END
     if not update.message.photo:
@@ -140,8 +144,24 @@ async def image_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     telegram_file = await photo.get_file()
     await telegram_file.download_to_drive(file_path)
 
-    prompt_text = context.user_data.get("prompt", "")
-    imgs, err = await run_flow(prompt_text, file_path)
+    context.user_data["image_path"] = file_path
+    await update.message.reply_text("Send your prompt text:")
+    return TEXT
+
+
+async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Run the flow using the stored image and provided prompt."""
+    if update.effective_user.id != AUTHORIZED_USER_ID:
+        return ConversationHandler.END
+
+    prompt_text = update.message.text.strip()
+    context.user_data["prompt"] = prompt_text
+    img_path = context.user_data.get("image_path")
+    if not img_path:
+        await update.message.reply_text("No image found. Please /run again.")
+        return ConversationHandler.END
+
+    imgs, err = await run_flow(prompt_text, img_path)
 
     if err:
         await update.message.reply_text(f"❌ {err}")
@@ -151,11 +171,12 @@ async def image_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         for img in imgs:
             if os.path.getsize(img):
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=InputFile(img))
-    os.remove(file_path)
+
+    os.remove(img_path)
     return ConversationHandler.END
 
 
-async def exit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user.id != AUTHORIZED_USER_ID:
         return
     for p in psutil.process_iter(["cmdline"]):
@@ -171,14 +192,16 @@ async def exit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start_cmd)],
+        entry_points=[CommandHandler("run", run_cmd)],
         states={
-            TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, text_received)],
             IMAGE: [MessageHandler(filters.PHOTO, image_received)],
+            TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, text_received)],
         },
-        fallbacks=[CommandHandler("exit", exit_cmd)],
+        fallbacks=[CommandHandler("stop", stop_cmd)],
     )
     app.add_handler(conv)
-    app.add_handler(CommandHandler("exit", exit_cmd))
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("stop", stop_cmd))
+    app.add_handler(CommandHandler("run", run_cmd))
     logger.info("FluxKontext bot running.")
     app.run_polling()
