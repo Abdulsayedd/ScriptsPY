@@ -111,11 +111,16 @@ async def run_flow(prompt_text: str, img_path: str) -> tuple[list[str], str | No
         await asyncio.sleep(1)
         after = set(os.listdir(OUTPUT_DIR))
         new = after - before
-        imgs = [
-            os.path.join(OUTPUT_DIR, f)
-            for f in new
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
-        ]
+        imgs = []
+        for f in new:
+            if not f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                continue
+            path = os.path.join(OUTPUT_DIR, f)
+            try:
+                if os.path.getsize(path) > 0:
+                    imgs.append(path)
+            except OSError:
+                continue
         if imgs:
             return sorted(imgs), None
     return [], "Timeout waiting for ComfyUI output"
@@ -176,8 +181,17 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text("⚠️ No images generated.")
     else:
         for img in imgs:
-            if os.path.getsize(img):
-                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=InputFile(img))
+            if not os.path.getsize(img):
+                continue
+            try:
+                with open(img, "rb") as f:
+                    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=f)
+            except Exception as e:
+                logger.error(f"Failed to send photo: {e}")
+                try:
+                    await context.bot.send_document(chat_id=update.effective_chat.id, document=InputFile(img))
+                except Exception as e2:
+                    logger.error(f"Failed to send as document: {e2}")
 
     os.remove(img_path)
     return ConversationHandler.END
