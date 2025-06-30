@@ -137,7 +137,8 @@ async def image_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     photo = update.message.photo[-1]
     file_path = os.path.join(OUTPUT_DIR, f"input_{int(time.time())}.png")
-    await photo.get_file().download_to_drive(file_path)
+    telegram_file = await photo.get_file()
+    await telegram_file.download_to_drive(file_path)
 
     prompt_text = context.user_data.get("prompt", "")
     imgs, err = await run_flow(prompt_text, file_path)
