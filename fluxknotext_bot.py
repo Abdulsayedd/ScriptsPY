@@ -57,8 +57,15 @@ def ensure_comfy() -> None:
                 return
         except Exception:
             continue
-    subprocess.Popen([COMFY_RUN], shell=True)
-    logger.info("Launched ComfyUI")
+    try:
+        subprocess.Popen(
+            COMFY_RUN,
+            cwd=os.path.dirname(COMFY_RUN),
+            shell=True,
+        )
+        logger.info("Launched ComfyUI")
+    except Exception as e:
+        logger.error(f"Failed to launch ComfyUI: {e}")
 
 
 async def run_flow(prompt_text: str, img_path: str) -> tuple[list[str], str | None]:
