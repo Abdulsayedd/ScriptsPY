@@ -4,17 +4,14 @@ This repository contains utility Python scripts.
 
 ## AI Subtitle Auto-Sync for Bazarr
 
-`BazzarPost.py` synchronizes Arabic subtitles with their English counterparts using an LLM for semantic matching.
+`bazzarPost.py` synchronizes downloaded Arabic subtitles with their embedded English counterparts using a local LLM for semantic matching.
 
 ### Usage
 
 ```bash
-python BazzarPost.py episode.en.srt episode.ar.srt
+python bazzarPost.py /path/to/video.mkv
 ```
 
-The script requires an OpenAI-compatible endpoint. Set the following environment variables:
+The script expects `<video>.en.srt` and `<video>.ar.srt` to exist in the same directory. The synced file will be written as `<video>.ar.synced.srt`.
 
-- `OPENAI_API_KEY` – API key for the model server.
-- `OPENAI_API_BASE` – (optional) base URL if using a local server such as LM Studio.
-
-The output will be saved as `episode.ar.synced.srt` in the same directory.
+It assumes an OpenAI-compatible model (e.g. phi-4 via LM Studio) is reachable at `http://localhost:1234/v1/chat/completions`.
